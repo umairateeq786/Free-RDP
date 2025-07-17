@@ -1,1 +1,28 @@
+name: Free Windows RDP
 
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    steps:
+      - name: Enable RDP and Download Ngrok
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip -DestinationPath .
+          .\ngrok\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          Start-Process .\ngrok\ngrok.exe "tcp 3389"
+          Start-Sleep -Seconds 15
+          Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" | Out-File tunnels.json
+          $tunnel = Get-Content tunnels.json | ConvertFrom-Json
+          Write-Output "====================================="
+          Write-Output "🔷 RDP Address: $($tunnel.tunnels[0].public_url)"
+          Write-Output "🔷 Username: runneradmin"
+          Write-Output "🔷 Password: P@ssw0rd!"
+          Write-Output "====================================="
+      - name: Keep Session Alive
+        run: |
+          while ($true) { Start-Sleep -Seconds 60 }
