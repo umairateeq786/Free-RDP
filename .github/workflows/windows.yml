@@ -1,7 +1,7 @@
-name: FREE‑RDP‑WINDOWS‑2022‑NGROK
+name: FREE-RDP-WINDOWS-2022-NGROK
 
 on:
-  workflow_dispatch  # Manual trigger
+  workflow_dispatch
 
 jobs:
   rdp:
@@ -9,72 +9,53 @@ jobs:
     timeout-minutes: 360
 
     steps:
-    #---------------------------------------------
-    # 1. Download Ngrok (v3+) and keep-alive script
-    #---------------------------------------------
-    - name: ⬇️ Download Ngrok and keep-alive
+
+    # Step 1: Download ngrok and keep-alive script
+    - name: ⬇️ Download ngrok & keep-alive script
       run: |
         Invoke-WebRequest `
-          -Uri https://bin.ngrok.com/ngrok-v3-stable-windows-amd64.zip `
+          -Uri https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip `
           -OutFile $Env:RUNNER_TEMP\ngrok.zip
-        Expand-Archive $Env:RUNNER_TEMP\ngrok.zip -DestinationPath $Env:RUNNER_TEMP
+        Expand-Archive -Path $Env:RUNNER_TEMP\ngrok.zip -DestinationPath $Env:RUNNER_TEMP
         Set-Content -Path $Env:RUNNER_TEMP\keep.ps1 -Value 'while ($true) { Start-Sleep 300 }'
 
-    #---------------------------------------------
-    # 2. Add ngrok config file with authtoken
-    #---------------------------------------------
-    - name: 🔐 Configure Ngrok (authtoken + tunnel)
+    # Step 2: Set ngrok authtoken (v3 syntax)
+    - name: 🔐 Authenticate ngrok
       env:
-        NG_TOK: ${{ secrets.NGROK_TOKEN }}
+        NG_TOK: ${{ secrets.NGROK_TOKEN }}  # Add this token in GitHub: Settings > Secrets > Actions
       run: |
-        $config = @"
-authtoken: $Env:NG_TOK
-region: ap
-tunnels:
-  rdp:
-    proto: tcp
-    addr: 3389
-"@
-        $config | Out-File -Encoding ASCII "$Env:USERPROFILE\.ngrok2\ngrok.yml"
+        & "$Env:RUNNER_TEMP\ngrok.exe" config add-authtoken $Env:NG_TOK
 
-    #---------------------------------------------
-    # 3. Enable Remote Desktop & open firewall
-    #---------------------------------------------
-    - name: 🔧 Enable RDP + Firewall
+    # Step 3: Enable Remote Desktop and open firewall
+    - name: 🔧 Enable RDP + firewall
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         net user runneradmin "P@ssw0rd!2025"
-        Write-Host "✔️  RDP Enabled — Username: runneradmin | Password: P@ssw0rd!2025"
+        Write-Host "✔️ RDP enabled. Username: runneradmin | Password: P@ssw0rd!2025"
 
-    #---------------------------------------------
-    # 4. Start Ngrok with config (v3 syntax)
-    #---------------------------------------------
-    - name: 🚇 Start Ngrok tunnel
+    # Step 4: Start ngrok TCP tunnel on port 3389 (RDP)
+    - name: 🚇 Start ngrok tunnel (TCP 3389)
       run: |
         Start-Process -FilePath "$Env:RUNNER_TEMP\ngrok.exe" `
-                      -ArgumentList "start", "--all", "--config", "$Env:USERPROFILE\.ngrok2\ngrok.yml" `
+                      -ArgumentList "tcp 3389 --region ap --log stdout" `
                       -WindowStyle Hidden
         Start-Sleep -Seconds 10
 
-    #---------------------------------------------
-    # 5. Fetch Ngrok tunnel public address
-    #---------------------------------------------
-    - name: 🌐 Fetch RDP Public Address
-      id: tunnel
+    # Step 5: Fetch public ngrok address
+    - name: 🌐 Fetch public RDP address
+      id: get_addr
       run: |
-        $url = (Invoke-RestMethod -Uri http://127.0.0.1:4040/api/tunnels).tunnels[0].public_url
-        echo "::set-output name=url::$url"
-        Write-Host "========================================"
-        Write-Host "▶️  CONNECT TO RDP USING THESE DETAILS:"
-        Write-Host "🔗  $url"
-        Write-Host "👤  User: runneradmin"
-        Write-Host "🔑  Pass: P@ssw0rd!2025"
-        Write-Host "========================================"
+        $tunnel = (Invoke-RestMethod -Uri http://127.0.0.1:4040/api/tunnels).tunnels[0].public_url
+        echo "::set-output name=url::$tunnel"
+        Write-Host "======================================"
+        Write-Host "▶️ CONNECT TO RDP:"
+        Write-Host "🔗 Address: $tunnel"
+        Write-Host "👤 User: runneradmin"
+        Write-Host "🔑 Pass: P@ssw0rd!2025"
+        Write-Host "======================================"
 
-    #---------------------------------------------
-    # 6. Keep the GitHub Runner alive (up to 6 hrs)
-    #---------------------------------------------
+    # Step 6: Keep session alive
     - name: ⏳ Keep session alive
       shell: pwsh
       run: |
