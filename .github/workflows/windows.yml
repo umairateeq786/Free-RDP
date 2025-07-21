@@ -36,37 +36,4 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         net user runneradmin "P@ssw0rd!2025"
-        Write-Host "✔️  RDP enabled. Username: runneradmin  Password: P@ssw0rd!2025"
-
-    #---------------------------------------------
-    # 4. Start ngrok TCP tunnel (v3 style)
-    #---------------------------------------------
-    - name: 🚇 Start ngrok tunnel (TCP 3389)
-      run: |
-        Start-Process -FilePath "$Env:RUNNER_TEMP\ngrok.exe" `
-                      -ArgumentList "tcp 3389 --region ap --log stdout" `
-                      -WindowStyle Hidden
-        Start-Sleep -Seconds 10
-
-    #---------------------------------------------
-    # 5. Fetch & print public address
-    #---------------------------------------------
-    - name: 🌐 Fetch public RDP address
-      id: addr
-      run: |
-        $tunnel = (Invoke-RestMethod -Uri http://127.0.0.1:4040/api/tunnels).tunnels.public_url
-        echo "::set-output name=url::$tunnel"
-        Write-Host "========================================"
-        Write-Host "▶️  CONNECT WITH THESE DETAILS:"
-        Write-Host "🔗  $tunnel"
-        Write-Host "👤  user: runneradmin"
-        Write-Host "🔑  pass: P@ssw0rd!2025"
-        Write-Host "========================================"
-
-    #---------------------------------------------
-    # 6. Keep session alive
-    #---------------------------------------------
-    - name: ⏳ Keep session alive
-      shell: pwsh
-      run: |
-        & $Env:RUNNER_TEMP\keep.ps1
+        Write-Host "✔️  RDP enabled. Username:
