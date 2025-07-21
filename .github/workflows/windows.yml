@@ -1,56 +1,52 @@
 name: FREE‑RDP‑WINDOWS‑2022‑NGROK
 on:
-  workflow_dispatch            # manual trigger so minutes aren’t wasted on every push
+  workflow_dispatch
 
 jobs:
   rdp:
-    runs-on: windows-2022      # GitHub’s Windows Server 2022 runner
-    timeout-minutes: 360       # hard limit (≈6 h)
+    runs-on: windows-2022
+    timeout-minutes: 360
     steps:
 
     #---------------------------------------------
-    # 1. Download ngrok binary and helper script(s)
+    # 1. Download ngrok binary and keep-alive script
     #---------------------------------------------
     - name: ⬇️  Download ngrok & keep‑alive script
       run: |
         Invoke-WebRequest `
-          -Uri https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip `
+          -Uri https://bin.ngrok.com/ngrok-v3-stable-windows-amd64.zip `
           -OutFile $Env:RUNNER_TEMP\ngrok.zip
         Expand-Archive $Env:RUNNER_TEMP\ngrok.zip -DestinationPath $Env:RUNNER_TEMP
-        # simple keep‑alive loop (powershell) → prevents job exit
         Set-Content -Path $Env:RUNNER_TEMP\keep.ps1 -Value 'while ($true) { Start-Sleep 300 }'
 
     #---------------------------------------------
-    # 2. Authenticate ngrok (requires TCP‑enabled acct)
+    # 2. Authenticate ngrok (v3 syntax)
     #---------------------------------------------
     - name: 🔐 ngrok authtoken
       env:
-        NG_TOK: ${{ secrets.NGROK_TOKEN }}    # ▶️  add this in repo → Settings → Secrets → Actions
+        NG_TOK: ${{ secrets.NGROK_TOKEN }}
       run: |
-        & "$Env:RUNNER_TEMP\ngrok\ngrok.exe" authtoken $Env:NG_TOK
+        & "$Env:RUNNER_TEMP\ngrok.exe" config add-authtoken $Env:NG_TOK
 
     #---------------------------------------------
-    # 3. Enable Remote Desktop & open firewall
+    # 3. Enable Remote Desktop & open firewall
     #---------------------------------------------
     - name: 🔧 Enable RDP + firewall
       run: |
-        # allow RDP connections
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
-        # enable Windows firewall rule group
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        # set a strong password for the default user so login is possible
         net user runneradmin "P@ssw0rd!2025"
         Write-Host "✔️  RDP enabled. Username: runneradmin  Password: P@ssw0rd!2025"
 
     #---------------------------------------------
-    # 4. Start ngrok TCP tunnel in background
+    # 4. Start ngrok TCP tunnel (v3 style)
     #---------------------------------------------
-    - name: 🚇 Start ngrok tunnel (TCP 3389)
+    - name: 🚇 Start ngrok tunnel (TCP 3389)
       run: |
-        Start-Process -FilePath "$Env:RUNNER_TEMP\ngrok\ngrok.exe" `
-                      -ArgumentList "tcp", "3389", "--region", "ap", "--log", "stdout" `
+        Start-Process -FilePath "$Env:RUNNER_TEMP\ngrok.exe" `
+                      -ArgumentList "tcp 3389 --region ap --log stdout" `
                       -WindowStyle Hidden
-        Start-Sleep -Seconds 10   # give ngrok time to connect
+        Start-Sleep -Seconds 10
 
     #---------------------------------------------
     # 5. Fetch & print public address
@@ -68,7 +64,7 @@ jobs:
         Write-Host "========================================"
 
     #---------------------------------------------
-    # 6. Keep the VM alive until timeout
+    # 6. Keep session alive
     #---------------------------------------------
     - name: ⏳ Keep session alive
       shell: pwsh
