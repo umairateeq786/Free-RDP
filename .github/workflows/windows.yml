@@ -1,27 +1,76 @@
-name: Window 10
-
-on: [push, workflow_dispatch]
+name: FREE‑RDP‑WINDOWS‑2022‑NGROK
+on:
+  workflow_dispatch            # manual trigger so minutes aren’t wasted on every push
 
 jobs:
-  build:
-
-    runs-on: windows-latest
-    timeout-minutes: 9999
-
-
+  rdp:
+    runs-on: windows-2022      # GitHub’s Windows Server 2022 runner
+    timeout-minutes: 360       # hard limit (≈6 h)
     steps:
-    - name: Download
-      run: Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
-    - name: Extract
-      run: Expand-Archive ngrok.zip
-    - name: Auth
-      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+
+    #---------------------------------------------
+    # 1. Download ngrok binary and helper script(s)
+    #---------------------------------------------
+    - name: ⬇️  Download ngrok & keep‑alive script
+      run: |
+        Invoke-WebRequest `
+          -Uri https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip `
+          -OutFile $Env:RUNNER_TEMP\ngrok.zip
+        Expand-Archive $Env:RUNNER_TEMP\ngrok.zip -DestinationPath $Env:RUNNER_TEMP
+        # simple keep‑alive loop (powershell) → prevents job exit
+        Set-Content -Path $Env:RUNNER_TEMP\keep.ps1 -Value 'while ($true) { Start-Sleep 300 }'
+
+    #---------------------------------------------
+    # 2. Authenticate ngrok (requires TCP‑enabled acct)
+    #---------------------------------------------
+    - name: 🔐 ngrok authtoken
       env:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-    - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
-    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "@cyb3rking" -Force)
-    - name: Create Tunnel
-      run: .\ngrok\ngrok.exe tcp 3389
+        NG_TOK: ${{ secrets.NGROK_TOKEN }}    # ▶️  add this in repo → Settings → Secrets → Actions
+      run: |
+        & "$Env:RUNNER_TEMP\ngrok\ngrok.exe" authtoken $Env:NG_TOK
+
+    #---------------------------------------------
+    # 3. Enable Remote Desktop & open firewall
+    #---------------------------------------------
+    - name: 🔧 Enable RDP + firewall
+      run: |
+        # allow RDP connections
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+        # enable Windows firewall rule group
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        # set a strong password for the default user so login is possible
+        net user runneradmin "P@ssw0rd!2025"
+        Write-Host "✔️  RDP enabled. Username: runneradmin  Password: P@ssw0rd!2025"
+
+    #---------------------------------------------
+    # 4. Start ngrok TCP tunnel in background
+    #---------------------------------------------
+    - name: 🚇 Start ngrok tunnel (TCP 3389)
+      run: |
+        Start-Process -FilePath "$Env:RUNNER_TEMP\ngrok\ngrok.exe" `
+                      -ArgumentList "tcp", "3389", "--region", "ap", "--log", "stdout" `
+                      -WindowStyle Hidden
+        Start-Sleep -Seconds 10   # give ngrok time to connect
+
+    #---------------------------------------------
+    # 5. Fetch & print public address
+    #---------------------------------------------
+    - name: 🌐 Fetch public RDP address
+      id: addr
+      run: |
+        $tunnel = (Invoke-RestMethod -Uri http://127.0.0.1:4040/api/tunnels).tunnels.public_url
+        echo "::set-output name=url::$tunnel"
+        Write-Host "========================================"
+        Write-Host "▶️  CONNECT WITH THESE DETAILS:"
+        Write-Host "🔗  $tunnel"
+        Write-Host "👤  user: runneradmin"
+        Write-Host "🔑  pass: P@ssw0rd!2025"
+        Write-Host "========================================"
+
+    #---------------------------------------------
+    # 6. Keep the VM alive until timeout
+    #---------------------------------------------
+    - name: ⏳ Keep session alive
+      shell: pwsh
+      run: |
+        & $Env:RUNNER_TEMP\keep.ps1
